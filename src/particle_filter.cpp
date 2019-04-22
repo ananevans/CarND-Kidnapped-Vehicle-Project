@@ -44,7 +44,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	  p.theta = dist_theta(gen);
 	  p.weight = 1.0;
 	  particles.push_back(p);
-//	  weights.push_back(1.0);
+	  weights.push_back(p.weight);
   }
 
 }
@@ -84,9 +84,36 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
    *   probably find it useful to implement this method and use it as a helper 
    *   during the updateWeights phase.
    */
+	// assumption: observations and predicted are in the same coordinate system
+	for ( int i = 0; i < observations.size(); i++) {
+		// Find closest prediction
+		int pos = -1;
+		double min_dist = std::numeric_limits::max();
+		for ( int j = 0; j < predicted.size(); j++) {
+			double d = dist(observations[j].x, observations[j].y, predicted[i].x, predicted[i].y);
+			if (min_dist < d) {
+				pos = j;
+				min_dist = dist;
+			}
+		}
+		if ( pos != -1 ) {
+			observations[i].id = predicted[pos].id;
+		} else {
+			std::cout << "Prediction not found!";
+		}
+	}
 
 }
 
+/**
+ * updateWeights Updates the weights for each particle based on the likelihood
+ *   of the observed measurements.
+ * @param sensor_range Range [m] of sensor
+ * @param std_landmark[] Array of dimension 2
+ *   [Landmark measurement uncertainty [x [m], y [m]]]
+ * @param observations Vector of landmark observations
+ * @param map Map class containing map landmarks
+ */
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
                                    const vector<LandmarkObs> &observations, 
                                    const Map &map_landmarks) {
@@ -104,6 +131,42 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
    *   (look at equation 3.33) http://planning.cs.uiuc.edu/node99.html
    */
 
+	// update weights for each particle
+	for ( int i = 0; i < num_particles; i++) { // for each particle
+		//transform the observations from the vehicle to the world coordinate system wrt particle
+		// transform to map x coordinate
+		vector<LandmarkObs> transformed_obs;
+		double x_part = particles[i].x;
+		double y_part = particles[i].y;
+		double theta = particles[i].theta;
+		for ( int j = 0; j < observations.size(); j++ ) {
+			LandmarkObs obs;
+			double x_obs = observations[j].x;
+			obs.x = x_part + (cos(theta) * x_obs) - (sin(theta) * y_obs);
+			double y_obs = observations[j].y;
+			obs.y = y_part + (sin(theta) * x_obs) + (cos(theta) * y_obs);
+			obs.id = observations[j].id;
+			transformed_obs.push_back(obs);
+		}
+		// create predicted vector
+		vector<LandmarkObs> predicted;
+		for (int j = 0; j < map_landmarks.landmark_list.size(); j++) {
+			LandmarkObs p;
+			p.x = map_landmarks.landmark_list[j].x_f;
+			p.y = map_landmarks.landmark_list[j].y_f;
+			p.id = p.x = map_landmarks.landmark_list[j].id_i;
+			if ( dist(p.x, p.y, particles[i].x, particles[i].y) < sensor_range ) {
+				predicted.push_back(p);
+			}
+		}
+		// associate measurements with landmarks
+		dataAssociation( predicted, observations);
+		//determine measurement probability
+		double w = 1.0;
+
+		//combine probabilities
+
+	}
 }
 
 void ParticleFilter::resample() {
@@ -114,6 +177,7 @@ void ParticleFilter::resample() {
    *   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
    */
 	std::vector<Particle> p1;
+	std::vect<double> w1;
 	std::default_random_engine gen;
 	std::discrete_distribution<int> d(0,num_particles);
 
@@ -129,10 +193,11 @@ void ParticleFilter::resample() {
 			index = (index+1) % num_particles;
 		}
 		p1.push_back(particles[index]);
+		w1.push_back(particles[index()].weight)
 	}
 
 	particles = p1;
-
+	weights = w1;
 }
 
 void ParticleFilter::SetAssociations(Particle& particle, 
